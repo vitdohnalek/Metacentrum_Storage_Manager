@@ -1,131 +1,135 @@
-import paramiko
-import tkinter as tk
+import sys
 import stat
-from tkinter import filedialog, messagebox
+import paramiko
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox
+)
+from PySide6.QtCore import Qt
 
-ssh_client = None
-sftp_client = None
-current_path = None
+class MetaCentrumClient(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("MetaCentrum File Manager")
+        self.setMinimumWidth(600)
 
-def connect_ssh():
-    global ssh_client, sftp_client, current_path
-    ssh_client = paramiko.SSHClient()
-    ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    try:
-        ssh_client.connect(hostname=hostname_entry.get(),
-                           username=username_entry.get(),
-                           password=password_entry.get())
-        sftp_client = ssh_client.open_sftp()
-        current_path = f"/storage/brno2/home/{username_entry.get()}"
-        messagebox.showinfo("Success", "Connected to MetaCentrum!")
-        list_remote_files()
-    except Exception as e:
-        messagebox.showerror("Connection Error", str(e))
+        self.ssh_client = None
+        self.sftp_client = None
+        self.current_path = ""
 
+        self.init_ui()
 
-def list_remote_files():
-    global current_path
-    try:
-        entries = sftp_client.listdir_attr(current_path)
-        visible_items = []
+    def init_ui(self):
+        layout = QVBoxLayout()
 
-        if current_path != f"/storage/brno2/home/{username_entry.get()}":
-            visible_items.append("⬆️ ..")  # Option to go up
+        # Connection fields
+        self.hostname_input = QLineEdit("skirit.metacentrum.cz")
+        self.username_input = QLineEdit()
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.Password)
 
-        for attr in entries:
-            name = attr.filename
-            if name.startswith('.'):
-                continue
-            if stat.S_ISDIR(attr.st_mode):
-                display_name = f"📁 {name}/"
-            else:
-                display_name = f"📄 {name}"
-            visible_items.append(display_name)
+        layout.addWidget(QLabel("Hostname:"))
+        layout.addWidget(self.hostname_input)
+        layout.addWidget(QLabel("Username:"))
+        layout.addWidget(self.username_input)
+        layout.addWidget(QLabel("Password:"))
+        layout.addWidget(self.password_input)
 
-        file_listbox.delete(0, tk.END)
-        for item in sorted(visible_items, key=lambda x: x.lower()):
-            file_listbox.insert(tk.END, item)
+        self.connect_btn = QPushButton("Connect")
+        self.connect_btn.clicked.connect(self.connect_ssh)
+        layout.addWidget(self.connect_btn)
 
-    except Exception as e:
-        messagebox.showerror("List Error", str(e))
+        # File list
+        self.file_list = QListWidget()
+        self.file_list.itemDoubleClicked.connect(self.navigate_or_select)
+        layout.addWidget(self.file_list)
 
+        # Action buttons
+        btn_layout = QHBoxLayout()
 
-def on_item_double_click(event):
-    global current_path
-    selection = file_listbox.curselection()
-    if not selection:
-        return
-    item = file_listbox.get(selection[0])
+        self.download_btn = QPushButton("Download Selected File")
+        self.download_btn.clicked.connect(self.download_file)
+        btn_layout.addWidget(self.download_btn)
 
-    if item.startswith("📁 "):
-        folder_name = item.replace("📁 ", "").rstrip('/')
-        current_path += f"/{folder_name}"
-        list_remote_files()
-    elif item.startswith("⬆️"):
-        if current_path != f"/storage/brno2/home/{username_entry.get()}":
-            current_path = '/'.join(current_path.rstrip('/').split('/')[:-1])
-            list_remote_files()
+        self.upload_btn = QPushButton("Upload File to Current Folder")
+        self.upload_btn.clicked.connect(self.upload_file)
+        btn_layout.addWidget(self.upload_btn)
 
+        layout.addLayout(btn_layout)
+        self.setLayout(layout)
 
-def download_file():
-    selection = file_listbox.curselection()
-    if not selection:
-        messagebox.showwarning("No file selected", "Please select a file to download.")
-        return
-    filename = file_listbox.get(selection[0])
-    if not filename.startswith("📄 "):
-        messagebox.showwarning("Invalid Selection", "Please select a file (not folder).")
-        return
-    filename = filename.replace("📄 ", "")
-    local_dir = filedialog.askdirectory()
-    if not local_dir:
-        return
-    remote_path = f"{current_path}/{filename}"
-    local_path = f"{local_dir}/{filename}"
-    try:
-        sftp_client.get(remote_path, local_path)
-        messagebox.showinfo("Success", f"Downloaded to {local_path}")
-    except Exception as e:
-        messagebox.showerror("Download Error", str(e))
+    def connect_ssh(self):
+        self.ssh_client = paramiko.SSHClient()
+        self.ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            self.ssh_client.connect(
+                hostname=self.hostname_input.text(),
+                username=self.username_input.text(),
+                password=self.password_input.text()
+            )
+            self.sftp_client = self.ssh_client.open_sftp()
+            self.current_path = f"/storage/brno2/home/{self.username_input.text()}"
+            QMessageBox.information(self, "Success", "Connected to MetaCentrum!")
+            self.list_remote_files()
+        except Exception as e:
+            QMessageBox.critical(self, "Connection Error", str(e))
 
-def upload_file():
-    local_path = filedialog.askopenfilename()
-    if not local_path:
-        return
-    filename = local_path.split('/')[-1]
-    remote_path = f"{current_path}/{filename}"
-    try:
-        sftp_client.put(local_path, remote_path)
-        messagebox.showinfo("Success", f"Uploaded {filename} to MetaCentrum.")
-        list_remote_files()
-    except Exception as e:
-        messagebox.showerror("Upload Error", str(e))
+    def list_remote_files(self):
+        try:
+            entries = self.sftp_client.listdir_attr(self.current_path)
+            self.file_list.clear()
+            self.file_list.addItem("⬆️ ..")  # For going up a directory
+            for attr in sorted(entries, key=lambda x: x.filename.lower()):
+                if attr.filename.startswith('.'):
+                    continue
+                name = attr.filename + ('/' if stat.S_ISDIR(attr.st_mode) else '')
+                icon = "📁" if stat.S_ISDIR(attr.st_mode) else "📄"
+                self.file_list.addItem(f"{icon} {name}")
+        except Exception as e:
+            QMessageBox.critical(self, "List Error", str(e))
 
+    def navigate_or_select(self, item):
+        text = item.text()[2:].strip()
+        if text == "..":
+            if self.current_path != "/":
+                self.current_path = '/'.join(self.current_path.rstrip('/').split('/')[:-1]) or "/"
+                self.list_remote_files()
+        elif text.endswith('/'):
+            self.current_path = f"{self.current_path.rstrip('/')}/{text.rstrip('/')}"
+            self.list_remote_files()
 
-# GUI setup
-root = tk.Tk()
-root.title("MetaCentrum File Manager")
+    def download_file(self):
+        item = self.file_list.currentItem()
+        if not item or item.text().startswith("📁") or item.text().startswith("⬆️"):
+            QMessageBox.warning(self, "Invalid selection", "Please select a file to download.")
+            return
+        filename = item.text()[2:].strip()
+        local_dir = QFileDialog.getExistingDirectory(self, "Select Download Directory")
+        if not local_dir:
+            return
+        remote_path = f"{self.current_path}/{filename}"
+        local_path = f"{local_dir}/{filename}"
+        try:
+            self.sftp_client.get(remote_path, local_path)
+            QMessageBox.information(self, "Success", f"Downloaded to {local_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Download Error", str(e))
 
-tk.Label(root, text="Hostname").pack()
-hostname_entry = tk.Entry(root)
-hostname_entry.insert(0, "skirit.metacentrum.cz")
-hostname_entry.pack()
+    def upload_file(self):
+        local_path, _ = QFileDialog.getOpenFileName(self, "Select File to Upload")
+        if not local_path:
+            return
+        filename = local_path.split('/')[-1]
+        remote_path = f"{self.current_path}/{filename}"
+        try:
+            self.sftp_client.put(local_path, remote_path)
+            QMessageBox.information(self, "Success", f"Uploaded {filename} to MetaCentrum.")
+            self.list_remote_files()
+        except Exception as e:
+            QMessageBox.critical(self, "Upload Error", str(e))
 
-tk.Label(root, text="Username").pack()
-username_entry = tk.Entry(root)
-username_entry.pack()
-
-tk.Label(root, text="Password").pack()
-password_entry = tk.Entry(root, show="*")
-password_entry.pack()
-
-tk.Button(root, text="Connect", command=connect_ssh).pack()
-
-file_listbox = tk.Listbox(root, height=20, width=60)
-file_listbox.pack()
-file_listbox.bind("<Double-Button-1>", on_item_double_click)
-
-tk.Button(root, text="Upload File to Current Folder", command=upload_file).pack()
-tk.Button(root, text="Download Selected File", command=download_file).pack()
-
-root.mainloop()
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = MetaCentrumClient()
+    window.show()
+    sys.exit(app.exec())
