@@ -3,7 +3,8 @@ import paramiko
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit,
     QPushButton, QListWidget, QLabel, QMessageBox,
-    QInputDialog, QAbstractItemView, QFileDialog
+    QInputDialog, QAbstractItemView, QFileDialog,
+    QHBoxLayout
 )
 from PySide6.QtCore import Qt
 from stat import S_ISDIR
@@ -13,21 +14,28 @@ import os
 class SSHBrowser(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Metacentrum SSH Browser - Phase 1")
+        self.setWindowTitle("Metacentrum SSH Browser")
         self.resize(800, 600)
       
         # Layout and widgets
         layout = QVBoxLayout()
 
+        ceredentials_row = QHBoxLayout()
+        upload_download_row = QHBoxLayout()
+        manipulate_row = QHBoxLayout()
+
         self.host_input = QLineEdit()
         self.host_input.setText("skirit.metacentrum.cz")
+        ceredentials_row.addWidget(self.host_input)
 
         self.user_input = QLineEdit()
         self.user_input.setPlaceholderText("Username")
+        ceredentials_row.addWidget(self.user_input)
 
         self.pass_input = QLineEdit()
         self.pass_input.setPlaceholderText("Password")
         self.pass_input.setEchoMode(QLineEdit.Password)
+        ceredentials_row.addWidget(self.pass_input)
 
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.connect_ssh)
@@ -37,22 +45,27 @@ class SSHBrowser(QWidget):
         self.upload_button = QPushButton("⬆️ Upload Files")
         self.upload_button.setEnabled(False)  # Enable only when connected
         self.upload_button.clicked.connect(self.upload_files)
+        upload_download_row.addWidget(self.upload_button)
 
         self.download_button = QPushButton("⬇️ Download")
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self.download_selected_items)
-        
+        upload_download_row.addWidget(self.download_button)
+
         self.rename_button = QPushButton("✏️ Rename")
         self.rename_button.setEnabled(False)
         self.rename_button.clicked.connect(self.rename_selected_item)
+        manipulate_row.addWidget(self.rename_button)
 
         self.mkdir_button = QPushButton("📂 Make New Folder")
         self.mkdir_button.setEnabled(False)
         self.mkdir_button.clicked.connect(self.make_directory)
+        manipulate_row.addWidget(self.mkdir_button)
 
         self.delete_button = QPushButton("🗑️ Delete")
         self.delete_button.setEnabled(False)
         self.delete_button.clicked.connect(self.delete_selected_items)
+        manipulate_row.addWidget(self.delete_button)
         
         self.status_label = QLabel("Not connected")
         self.file_list = QListWidget()
@@ -60,18 +73,13 @@ class SSHBrowser(QWidget):
         # Set multi-selection mode
         self.file_list.setSelectionMode(QAbstractItemView.MultiSelection)
 
-        layout.addWidget(self.host_input)
-        layout.addWidget(self.user_input)
-        layout.addWidget(self.pass_input)
+        layout.addLayout(ceredentials_row)
         layout.addWidget(self.connect_button)
         layout.addWidget(self.status_label)
         layout.addWidget(self.file_list)
         layout.addWidget(self.status_bar)
-        layout.addWidget(self.upload_button)
-        layout.addWidget(self.download_button)
-        layout.addWidget(self.rename_button)
-        layout.addWidget(self.mkdir_button)
-        layout.addWidget(self.delete_button)
+        layout.addLayout(upload_download_row)
+        layout.addLayout(manipulate_row)
 
         self.setLayout(layout)
 
