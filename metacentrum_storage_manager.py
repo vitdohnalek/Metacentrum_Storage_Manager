@@ -47,7 +47,7 @@ class SSHBrowser(QWidget):
         self.upload_button.clicked.connect(self.upload_files)
         upload_download_row.addWidget(self.upload_button)
 
-        self.download_button = QPushButton("⬇️ Download")
+        self.download_button = QPushButton("⬇️ Download Files")
         self.download_button.setEnabled(False)
         self.download_button.clicked.connect(self.download_selected_items)
         upload_download_row.addWidget(self.download_button)
