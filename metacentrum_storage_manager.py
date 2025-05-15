@@ -4,9 +4,10 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLineEdit,
     QPushButton, QListWidget, QLabel, QMessageBox,
     QInputDialog, QAbstractItemView, QFileDialog,
-    QHBoxLayout
+    QHBoxLayout, QComboBox
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
 from stat import S_ISDIR
 import os
 
@@ -14,7 +15,7 @@ import os
 class SSHBrowser(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Metacentrum SSH Browser")
+        self.setWindowTitle("MetaBrowse")
         self.resize(800, 600)
       
         # Layout and widgets
@@ -24,9 +25,18 @@ class SSHBrowser(QWidget):
         upload_download_row = QHBoxLayout()
         manipulate_row = QHBoxLayout()
 
-        self.host_input = QLineEdit()
-        self.host_input.setText("skirit.metacentrum.cz")
-        ceredentials_row.addWidget(self.host_input)
+        self.location_input = QComboBox()
+        self.location_map = {
+            "brno2" : "/storage/brno2/home/{username}",
+            "budejovice1" : "/storage/budejovice1/home/{username}",
+            "liberec3" : "/storage/liberec3-tul/home/{username}",
+            "plzen1" : "/storage/plzen1/home/{username}",
+            "praha2" : "/storage/praha2-natur/home/{username}",
+            "pruhonice1" : "/storage/pruhonice1-ibot/home/{username}",
+            "vestec1" : "/storage/vestec1-elixir/home/{username}"
+        }
+        self.location_input.addItems(self.location_map.keys())
+        ceredentials_row.addWidget(self.location_input)
 
         self.user_input = QLineEdit()
         self.user_input.setPlaceholderText("Username")
@@ -90,9 +100,13 @@ class SSHBrowser(QWidget):
         self.file_list.itemDoubleClicked.connect(self.handle_item_double_click)
 
     def connect_ssh(self):
-        hostname = self.host_input.text()
+        location = self.location_input.currentText()
+        path_template = self.location_map[location]
+
         username = self.user_input.text()
         password = self.pass_input.text()
+        hostname = "skirit.metacentrum.cz"
+        remote_path = path_template.format(username=username)
 
         try:
             self.ssh_client = paramiko.SSHClient()
@@ -100,16 +114,18 @@ class SSHBrowser(QWidget):
             self.ssh_client.connect(hostname, username=username, password=password)
 
             self.sftp_client = self.ssh_client.open_sftp()
-            
+
             self.upload_button.setEnabled(True)
             self.download_button.setEnabled(True)
             self.rename_button.setEnabled(True)
             self.mkdir_button.setEnabled(True)
             self.delete_button.setEnabled(True)
 
-            self.status_label.setText(f"Connected to {hostname}")
+            self.status_label.setText(f"Connected to {hostname}, browsing {remote_path}")
+            
+            self.root_path = remote_path
+            self.list_remote_files(remote_path)
 
-            self.list_remote_files(".")
         except Exception as e:
             QMessageBox.critical(self, "Connection Error", str(e))
             self.status_label.setText("Connection failed")
@@ -121,8 +137,8 @@ class SSHBrowser(QWidget):
             files = self.sftp_client.listdir_attr(path)
             entries = []
 
-            # Add ".." to go up unless we're at root
-            if path not in ["/", ".", ""]:
+            
+            if path not in ["/", ".", ""] and path != self.root_path:
                 entries.append("⬅️ ..")
 
             for attr in files:
@@ -290,6 +306,11 @@ class SSHBrowser(QWidget):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    font = QFont()
+    font.setPointSize(11)
+    app.setFont(font)
+
     window = SSHBrowser()
     window.show()
     sys.exit(app.exec())
