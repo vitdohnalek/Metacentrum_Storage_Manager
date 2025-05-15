@@ -9,8 +9,13 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from stat import S_ISDIR
+import time
 import os
+import re
 
+def remove_ansi_escape_sequences(text):
+    ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+    return ansi_escape.sub('', text)
 
 class SSHBrowser(QWidget):
     def __init__(self):
@@ -27,15 +32,19 @@ class SSHBrowser(QWidget):
 
         self.location_input = QComboBox()
         self.location_map = {
+            "brno11-elixir" : "/storage/brno11-elixir/home/{username}",
+            "brno12-cerit" : "/storage/brno12-cerit/home/{username}",
             "brno2" : "/storage/brno2/home/{username}",
             "budejovice1" : "/storage/budejovice1/home/{username}",
-            "liberec3" : "/storage/liberec3-tul/home/{username}",
+            "liberec3-tul" : "/storage/liberec3-tul/home/{username}",
             "plzen1" : "/storage/plzen1/home/{username}",
-            "praha2" : "/storage/praha2-natur/home/{username}",
-            "pruhonice1" : "/storage/pruhonice1-ibot/home/{username}",
-            "vestec1" : "/storage/vestec1-elixir/home/{username}"
+            "praha2-natur" : "/storage/praha2-natur/home/{username}",
+            "praha5-elixir" : "/storage/praha5-elixir/home/{username}",
+            "pruhonice1-ibot" : "/storage/pruhonice1-ibot/home/{username}",
+            "vestec1-elixir" : "/storage/vestec1-elixir/home/{username}"
         }
         self.location_input.addItems(self.location_map.keys())
+        self.location_input.setCurrentText("brno2")
         ceredentials_row.addWidget(self.location_input)
 
         self.user_input = QLineEdit()
@@ -78,6 +87,7 @@ class SSHBrowser(QWidget):
         manipulate_row.addWidget(self.delete_button)
         
         self.status_label = QLabel("Not connected")
+        self.storage_info_label =QLabel("")
         self.file_list = QListWidget()
 
         # Set multi-selection mode
@@ -86,6 +96,7 @@ class SSHBrowser(QWidget):
         layout.addLayout(ceredentials_row)
         layout.addWidget(self.connect_button)
         layout.addWidget(self.status_label)
+        layout.addWidget(self.storage_info_label)
         layout.addWidget(self.file_list)
         layout.addWidget(self.status_bar)
         layout.addLayout(upload_download_row)
@@ -115,6 +126,49 @@ class SSHBrowser(QWidget):
 
             self.sftp_client = self.ssh_client.open_sftp()
 
+            # Get the remote shell output (login banner + quotas)
+            stdin, stdout, stderr = self.ssh_client.exec_command('cat /etc/motd || echo ""')
+            motd = stdout.read().decode('utf-8')
+
+            # Also try capturing last login or full banner (because MOTD may be empty)
+            if not motd.strip():
+                stdin, stdout, stderr = self.ssh_client.exec_command('uptime; whoami')  # fallback commands
+
+            # You may instead capture the login banner by forcing a pseudo-terminal:
+            # This example captures the welcome message:
+            transport = self.ssh_client.get_transport()
+            channel = transport.open_session()
+            channel.get_pty()
+            channel.invoke_shell()
+
+            time.sleep(1)  # wait for server to send banner
+
+            output = ""
+            while channel.recv_ready():
+                output += channel.recv(1024).decode('utf-8')
+
+            # Parse the output for the line containing your location quotas:
+            storage_line = None
+            for line in output.splitlines():
+                if location in line:
+                    storage_line = line
+                    break
+
+            if storage_line:
+                clean_line = remove_ansi_escape_sequences(storage_line)
+                parts = clean_line.split()
+                available_space = parts[1]
+                used_space = parts[2]
+                max_files = parts[3]
+                current_files = parts[4]
+                self.storage_info_label.setText(
+                    f"Available Space: {available_space} Used Space: {used_space} "
+                    f"Max File Quota: {max_files} Files Used: {current_files}"
+                )
+            else:
+                self.storage_info_label.setText("Storage info not found.")
+
+            # Enable buttons etc.
             self.upload_button.setEnabled(True)
             self.download_button.setEnabled(True)
             self.rename_button.setEnabled(True)
@@ -122,7 +176,7 @@ class SSHBrowser(QWidget):
             self.delete_button.setEnabled(True)
 
             self.status_label.setText(f"Connected to {hostname}, browsing {remote_path}")
-            
+
             self.root_path = remote_path
             self.list_remote_files(remote_path)
 
